@@ -661,6 +661,22 @@ freeboard.loadDatasourcePlugin({
 // │ Licensed under the MIT license.                                    │ \\
 // └────────────────────────────────────────────────────────────────────┘ \\
 
+function EVALUATE_STRING(source, statement) {
+    var keys = Object.keys(source);
+    var str = statement;
+
+    keys.forEach(function (key) {
+        str = str.replace('{{ ' + key + ' }}', source[key]);
+    });
+
+    try {
+        return eval(str);
+    } catch (ex) {
+        return false;
+    }
+}
+
+
 (function () {
 	var SPARKLINE_HISTORY_LENGTH = 100;
 	var SPARKLINE_COLORS = ["#FF9900", "#FFFFFF", "#B3B4B4", "#6B6B6B", "#28DE28", "#13F7F9", "#E6EE18", "#C41204", "#CA3CB8", "#0B1CFB"];
@@ -917,18 +933,36 @@ freeboard.loadDatasourcePlugin({
 		}
 
         this.onCalculatedValueChanged = function (settingName, newValue) {
-            if (settingName == "value") {
+            var value = newValue[currentSettings.value];
 
-                if (currentSettings.animate) {
-                    easeTransitionText(newValue, valueElement, 500);
+            if (currentSettings.transformFn) {
+                var __value = EVALUATE_STRING(newValue, currentSettings.transformFn);
+
+                if (__value !== false) {
+                    value = __value;
                 }
-                else {
-                    valueElement.text(newValue);
+            }
+
+            function displayData() {
+                if (currentSettings.animate) {
+                    easeTransitionText(value, valueElement, 500);
+                } else {
+                    valueElement.text(value);
                 }
 
                 if (currentSettings.sparkline) {
-                    addValueToSparkline(sparklineElement, newValue);
+                    addValueToSparkline(sparklineElement, value);
                 }
+            }
+
+            if (settingName === 'wholeSource') {
+                if (newValue.device_id && currentSettings.deviceId) {
+                    if (newValue.device_id !== currentSettings.deviceId) {
+                        return false;
+                    }
+                }
+
+                displayData();
             }
         }
 
@@ -977,8 +1011,17 @@ freeboard.loadDatasourcePlugin({
             },
             {
                 name: "value",
-                display_name: "Value",
-                type: "calculated"
+                display_name: "Value Field",
+                type: window.DATA_PROPERTIES_OPTIONS.length > 0 ? "option" : "text",
+                default_value: "value",
+                options: window.DATA_PROPERTIES_OPTIONS,
+                description: "Name of the field that holds the value you want to display on this widget",
+            },
+            {
+                name: "transformFn",
+                display_name: "Transform Data",
+                type: "text",
+                description: "Expression like '{{ value }} * 1000' (without quote). There should be a whitespace between {{, }} and a data property",
             },
             {
                 name: "sparkline",
@@ -995,7 +1038,19 @@ freeboard.loadDatasourcePlugin({
                 name: "units",
                 display_name: "Units",
                 type: "text"
-            }
+            },
+            {
+                name: "deviceId",
+                display_name: "Device ID",
+                type: "text",
+                description: 'Display data only from the device that has this device ID',
+            },
+            {
+                name: "wholeSource",
+                display_name: "Data Source (JSON)",
+                type: "calculated",
+                default_value: 'datasources["default_mqtt"]["msg"]',
+            },
         ],
         newInstance: function (settings, newInstanceCallback) {
             newInstanceCallback(new textWidget(settings));
@@ -1055,8 +1110,24 @@ freeboard.loadDatasourcePlugin({
         }
 
         this.onCalculatedValueChanged = function (settingName, newValue) {
-            if (!_.isUndefined(gaugeObject)) {
-                gaugeObject.refresh(Number(newValue));
+            if (!_.isUndefined(gaugeObject) && settingName === 'wholeSource') {
+                var value = newValue[currentSettings.value];
+
+                if (currentSettings.transformFn) {
+                    var __value = EVALUATE_STRING(newValue, currentSettings.transformFn);
+
+                    if (__value !== false) {
+                        value = __value;
+                    }
+                }
+
+                if (newValue.device_id && currentSettings.deviceId) {
+                    if (newValue.device_id !== currentSettings.deviceId) {
+                        return false;
+                    }
+                }
+
+                gaugeObject.refresh(Number(value));
             }
         }
 
@@ -1085,8 +1156,17 @@ freeboard.loadDatasourcePlugin({
             },
             {
                 name: "value",
-                display_name: "Value",
-                type: "calculated"
+                display_name: "Value Field",
+                type: window.DATA_PROPERTIES_OPTIONS.length > 0 ? "option" : "text",
+                default_value: "value",
+                options: window.DATA_PROPERTIES_OPTIONS,
+                description: "Nam of the field that holds the value you want to display on this widget",
+            },
+            {
+                name: "transformFn",
+                display_name: "Transform Data",
+                type: "text",
+                description: "Expression like '{{ value }} * 1000' (without quote). There should be a whitespace between {{, }} and a data property",
             },
             {
                 name: "units",
@@ -1104,7 +1184,19 @@ freeboard.loadDatasourcePlugin({
                 display_name: "Maximum",
                 type: "text",
                 default_value: 100
-            }
+            },
+            {
+                name: "deviceId",
+                display_name: "Device ID",
+                type: "text",
+                description: 'Display data only from the device that has this device ID',
+            },
+            {
+                name: "wholeSource",
+                display_name: "Data Source (JSON)",
+                type: "calculated",
+                default_value: 'datasources["default_mqtt"]["msg"]',
+            },
         ],
         newInstance: function (settings, newInstanceCallback) {
             newInstanceCallback(new gaugeWidget(settings));
@@ -1135,11 +1227,29 @@ freeboard.loadDatasourcePlugin({
         }
 
         this.onCalculatedValueChanged = function (settingName, newValue) {
-			if (currentSettings.legend) {
-				addValueToSparkline(sparklineElement, newValue, currentSettings.legend.split(","));
-			} else {
-				addValueToSparkline(sparklineElement, newValue);
-			}
+            if (settingName === 'wholeSource') {
+                var value = newValue[currentSettings.value];
+
+                if (currentSettings.transformFn) {
+                    var __value = EVALUATE_STRING(newValue, currentSettings.transformFn);
+
+                    if (__value !== false) {
+                        value = __value;
+                    }
+                }
+
+                if (newValue.device_id && currentSettings.deviceId) {
+                    if (newValue.device_id !== currentSettings.deviceId) {
+                        return false;
+                    }
+                }
+
+    			if (currentSettings.legend) {
+    				addValueToSparkline(sparklineElement, value, currentSettings.legend.split(","));
+    			} else {
+    				addValueToSparkline(sparklineElement, value);
+    			}
+            }
         }
 
         this.onDispose = function () {
@@ -1175,9 +1285,17 @@ freeboard.loadDatasourcePlugin({
             },
             {
                 name: "value",
-                display_name: "Value",
-                type: "calculated",
+                display_name: "Value Field",
+                type: window.DATA_PROPERTIES_OPTIONS.length > 0 ? "option" : "text",
+                options: window.DATA_PROPERTIES_OPTIONS,
+                description: "Name of the field that holds the value you want to display",
 				multi_input: "true"
+            },
+            {
+                name: "transformFn",
+                display_name: "Transform Data",
+                type: "text",
+                description: "Expression like '{{ value }} * 1000' (without quote). There should be a whitespace between {{, }} and a data property",
             },
 			{
 				name: "include_legend",
@@ -1189,7 +1307,19 @@ freeboard.loadDatasourcePlugin({
 				display_name: "Legend",
 				type: "text",
 				description: "Comma-separated for multiple sparklines"
-			}
+			},
+            {
+                name: "deviceId",
+                display_name: "Device ID",
+                type: "text",
+                description: 'Display data only from the device that has this device ID',
+            },
+            {
+                name: "wholeSource",
+                display_name: "Data Source (JSON)",
+                type: "calculated",
+                default_value: 'datasources["default_mqtt"]["msg"]',
+            },
         ],
         newInstance: function (settings, newInstanceCallback) {
             newInstanceCallback(new sparklineWidget(settings));
@@ -1202,6 +1332,7 @@ freeboard.loadDatasourcePlugin({
         var paper;
         var strokeWidth = 3;
         var triangle;
+        var currentSettings = settings;
         var width, height;
         var currentValue = 0;
         var valueDiv = $('<div class="widget-big-text"></div>');
@@ -1238,27 +1369,48 @@ freeboard.loadDatasourcePlugin({
         }
 
         this.onSettingsChanged = function (newSettings) {
+            currentSettings = newSettings;
             unitsDiv.html(newSettings.units);
         }
 
         this.onCalculatedValueChanged = function (settingName, newValue) {
-            if (settingName == "direction") {
-                if (!_.isUndefined(triangle)) {
-                    var direction = "r";
+            if (settingName === 'wholeSource') {
+                var directionValue = newValue[currentSettings.direction];
+                var textValue = newValue[currentSettings.value_text];
 
-                    var oppositeCurrent = currentValue + 180;
+                if (currentSettings.transformFn) {
+                    var __value = EVALUATE_STRING(newValue, currentSettings.transformFn);
 
-                    if (oppositeCurrent < newValue) {
-                        //direction = "l";
+                    if (__value !== false) {
+                        directionValue = __value;
                     }
-
-                    triangle.animate({transform: "r" + newValue + "," + (width / 2) + "," + (height / 2)}, 250, "bounce");
                 }
 
-                currentValue = newValue;
-            }
-            else if (settingName == "value_text") {
-                valueDiv.html(newValue);
+                if (newValue.device_id && currentSettings.deviceId) {
+                    if (newValue.device_id !== currentSettings.deviceId) {
+                        return false;
+                    }
+                }
+
+                if (!_.isUndefined(directionValue)) {
+                    if (!_.isUndefined(triangle)) {
+                        var direction = "r";
+
+                        var oppositeCurrent = currentValue + 180;
+
+                        if (oppositeCurrent < directionValue) {
+                            //direction = "l";
+                        }
+
+                        triangle.animate({transform: "r" + directionValue + "," + (width / 2) + "," + (height / 2)}, 250, "bounce");
+                    }
+
+                    currentValue = directionValue;
+                }
+
+                if (!_.isUndefined(textValue)) {
+                    valueDiv.html(textValue);
+                }
             }
         }
 
@@ -1281,20 +1433,41 @@ freeboard.loadDatasourcePlugin({
         settings: [
             {
                 name: "direction",
-                display_name: "Direction",
-                type: "calculated",
-                description: "In degrees"
+                display_name: "Direction Field",
+                type: window.DATA_PROPERTIES_OPTIONS.length > 0 ? "option" : "text",
+                options: window.DATA_PROPERTIES_OPTIONS,
+                description: "Name of the field that hold direction value in degrees",
             },
             {
                 name: "value_text",
-                display_name: "Value Text",
-                type: "calculated"
+                display_name: "Value Text Field",
+                type: window.DATA_PROPERTIES_OPTIONS.length > 0 ? "option" : "text",
+                options: window.DATA_PROPERTIES_OPTIONS,
+                description: "Name of the field that holds the text value",
+            },
+            {
+                name: "transformFn",
+                display_name: "Transform Data",
+                type: "text",
+                description: "Expression like '{{ value }} * 1000' (without quote). There should be a whitespace between {{, }} and a data property",
             },
             {
                 name: "units",
                 display_name: "Units",
                 type: "text"
-            }
+            },
+            {
+                name: "deviceId",
+                display_name: "Device ID",
+                type: "text",
+                description: 'Display data only from the device that has this device ID',
+            },
+            {
+                name: "wholeSource",
+                display_name: "Data Source (JSON)",
+                type: "calculated",
+                default_value: 'datasources["default_mqtt"]["msg"]',
+            },
         ],
         newInstance: function (settings, newInstanceCallback) {
             newInstanceCallback(new pointerWidget(settings));
@@ -1432,12 +1605,22 @@ freeboard.loadDatasourcePlugin({
         }
 
         this.onCalculatedValueChanged = function (settingName, newValue) {
-            if (settingName == "value") {
-                isOn = Boolean(newValue);
+            if (settingName === 'wholeSource') {
+                var value = newValue[currentSettings.value];
+
+                if (newValue.device_id && currentSettings.deviceId) {
+                    if (newValue.device_id !== currentSettings.deviceId) {
+                        return false;
+                    }
+                }
+
+                isOn = Boolean(value);
             }
+
             if (settingName == "on_text") {
                 onText = newValue;
             }
+
             if (settingName == "off_text") {
                 offText = newValue;
             }
@@ -1466,8 +1649,10 @@ freeboard.loadDatasourcePlugin({
 	        },
 	        {
 	            name: "value",
-	            display_name: "Value",
-	            type: "calculated"
+	            display_name: "Value Field",
+	            type: window.DATA_PROPERTIES_OPTIONS.length > 0 ? "option" : "text",
+                options: window.DATA_PROPERTIES_OPTIONS,
+                description: "Name of the field that holds the value",
 	        },
 	        {
 	            name: "on_text",
@@ -1478,7 +1663,19 @@ freeboard.loadDatasourcePlugin({
 	            name: "off_text",
 	            display_name: "Off Text",
 	            type: "calculated"
-	        }
+	        },
+            {
+                name: "deviceId",
+                display_name: "Device ID",
+                type: "text",
+                description: 'Display data only from the device that has this device ID',
+            },
+            {
+                name: "wholeSource",
+                display_name: "Data Source (JSON)",
+                type: "calculated",
+                default_value: 'datasources["default_mqtt"]["msg"]',
+            },
         ],
         newInstance: function (settings, newInstanceCallback) {
             newInstanceCallback(new indicatorWidget(settings));
